@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Shroomtop420™ Files-to-Prompt Converter</title>
+  <meta name="description" content="Convert files to GPT prompt format (base64/text), offline & secure.">
+  <link rel="icon" href="https://www.shroomtop420.com/favicon.ico"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html,body{height:100%;}
+    body{background:linear-gradient(135deg,#1e0557 0%,#150932 100%);}
+    .glass {
+      background: rgba(30, 19, 51, 0.7);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px 0 #221a3655;
+    }
+    .prompt-wrap {
+      font-family: "JetBrains Mono",monospace;
+      word-break: break-all;
+      background: #12071d;
+      border-radius: 1rem;
+      padding: 1rem;
+      color: #d6d6ff;
+    }
+    .file-list::-webkit-scrollbar {height: 4px;}
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-8">
+  <header class="w-full max-w-2xl mb-8 text-center">
+    <h1 class="text-3xl sm:text-4xl font-extrabold text-cyan-300 tracking-tight">Shroomtop420™ Files-to-Prompt</h1>
+    <p class="mt-2 text-gray-300 text-lg">Convert any file into a GPT prompt block.<br/>100% local, private, and mobile-ready.</p>
+  </header>
+
+  <main class="w-full max-w-2xl glass rounded-2xl shadow-xl p-6 flex flex-col gap-6">
+    <!-- File Drop Area -->
+    <div id="drop-zone"
+      class="flex flex-col items-center justify-center border-2 border-dashed border-cyan-500 rounded-xl bg-[#190d2b66] hover:bg-[#24124c88] cursor-pointer transition p-8 mb-2"
+      tabindex="0">
+      <svg class="w-12 h-12 text-cyan-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 48 48">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M24 4v40M4 24h40" />
+      </svg>
+      <span class="text-lg text-cyan-200 font-medium">Drag & drop files here or click to select</span>
+      <input type="file" id="file-input" multiple class="hidden" />
+    </div>
+
+    <!-- File List & Output -->
+    <div id="files-section" class="hidden">
+      <div class="file-list flex gap-4 overflow-x-auto py-2">
+        <!-- Files will be listed here -->
+      </div>
+      <div class="mt-4">
+        <label class="flex items-center gap-2">
+          <input type="checkbox" id="as-base64" class="accent-cyan-500" checked />
+          <span class="text-cyan-200">Convert binary files as <b>base64</b> (images, PDF, etc.)</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Output Area -->
+    <div class="flex flex-col gap-2 mt-4">
+      <label class="text-cyan-300 font-semibold" for="output">Prompt Block:</label>
+      <pre id="output" class="prompt-wrap text-xs sm:text-sm max-h-72 overflow-auto select-all"></pre>
+      <div class="flex gap-3 mt-1">
+        <button id="copy-btn" class="px-4 py-2 rounded-xl bg-cyan-600 text-white font-bold hover:bg-cyan-800 transition">Copy</button>
+        <button id="download-btn" class="px-4 py-2 rounded-xl bg-purple-700 text-white font-bold hover:bg-purple-900 transition">Export .txt</button>
+        <button id="clear-btn" class="ml-auto px-3 py-2 rounded-xl text-gray-400 border border-gray-500 hover:bg-gray-800 transition">Clear</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="w-full text-center mt-8 text-gray-500 text-sm opacity-80">
+    <span>⚡ <a href="https://www.shroomtop420.com/" target="_blank" class="underline text-cyan-300">Shroomtop420.com</a> | Built for GPT power-users | v1.0</span>
+  </footer>
+
+  <script>
+    // ---- UI ELEMENTS ----
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const filesSection = document.getElementById('files-section');
+    const fileList = document.querySelector('.file-list');
+    const asBase64 = document.getElementById('as-base64');
+    const output = document.getElementById('output');
+    const copyBtn = document.getElementById('copy-btn');
+    const downloadBtn = document.getElementById('download-btn');
+    const clearBtn = document.getElementById('clear-btn');
+
+    // ---- STATE ----
+    let filesData = [];
+
+    // ---- UTILS ----
+    function isTextFile(type, name) {
+      const textTypes = ['text/', 'application/json', 'application/xml'];
+      return textTypes.some(tt => type.startsWith(tt)) || /\.(txt|md|csv|json|xml|html|js|css)$/i.test(name);
+    }
+    function getBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    function readText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+    }
+    function formatPromptBlock(file, data, asB64) {
+      return `### FILE: ${file.name} (${file.type || 'unknown'}, ${file.size} bytes)\n` +
+        (asB64
+          ? `Base64:\n<file name="${file.name}" type="${file.type}">\n${data}\n</file>\n`
+          : `Text Content:\n${data}\n`)
+    }
+    function renderPrompt() {
+      let prompt = '';
+      filesData.forEach(f => {
+        prompt += formatPromptBlock(f.file, f.data, f.asBase64) + '\n';
+      });
+      output.textContent = prompt.trim();
+    }
+    function addFileToList(file, idx) {
+      const el = document.createElement('div');
+      el.className = 'bg-gray-900/70 rounded-xl px-3 py-2 text-sm text-cyan-200 flex flex-col items-start gap-1 min-w-[170px] border border-cyan-900';
+      el.innerHTML = `
+        <div class="font-bold truncate max-w-[130px]">${file.name}</div>
+        <div class="text-xs opacity-80">${file.type || 'unknown'}</div>
+        <div class="text-xs text-gray-400">${file.size} bytes</div>
+        <button class="mt-1 px-2 py-1 rounded text-xs bg-rose-700 hover:bg-rose-900 text-white" data-remove="${idx}">Remove</button>
+      `;
+      el.querySelector('button').onclick = (e) => {
+        filesData.splice(idx, 1);
+        renderFiles();
+      };
+      fileList.appendChild(el);
+    }
+    function renderFiles() {
+      fileList.innerHTML = '';
+      filesData.forEach((f, i) => addFileToList(f.file, i));
+      filesSection.style.display = filesData.length ? 'block' : 'none';
+      renderPrompt();
+    }
+
+    // ---- FILE HANDLING ----
+    async function handleFiles(selectedFiles) {
+      for (let file of selectedFiles) {
+        let asB64 = asBase64.checked && !isTextFile(file.type, file.name);
+        let data;
+        try {
+          data = asB64 ? await getBase64(file) : await readText(file);
+        } catch (e) {
+          data = `[Error reading file: ${e}]`;
+        }
+        filesData.push({ file, data, asBase64: asB64 });
+      }
+      renderFiles();
+    }
+    dropZone.onclick = () => fileInput.click();
+    dropZone.ondragover = e => { e.preventDefault(); dropZone.classList.add('ring', 'ring-cyan-500'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('ring', 'ring-cyan-500');
+    dropZone.ondrop = e => {
+      e.preventDefault(); dropZone.classList.remove('ring', 'ring-cyan-500');
+      handleFiles(e.dataTransfer.files);
+    };
+    fileInput.onchange = () => handleFiles(fileInput.files);
+    asBase64.onchange = () => {
+      filesData = filesData.map(f => ({
+        ...f,
+        asBase64: asBase64.checked && !isTextFile(f.file.type, f.file.name),
+        data: f.data // Could reconvert, but for simplicity, only affects future files
+      }));
+      renderFiles();
+    };
+    clearBtn.onclick = () => {
+      filesData = [];
+      renderFiles();
+    };
+
+    // ---- OUTPUT ACTIONS ----
+    copyBtn.onclick = () => {
+      if (!output.textContent) return;
+      navigator.clipboard.writeText(output.textContent)
+        .then(() => copyBtn.textContent = 'Copied!')
+        .finally(() => setTimeout(() => copyBtn.textContent = 'Copy', 1400));
+    };
+    downloadBtn.onclick = () => {
+      if (!output.textContent) return;
+      const blob = new Blob([output.textContent], {type: 'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'prompt-block.txt';
+      document.body.appendChild(a);
+      a.click(); setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    };
+
+    // ---- INIT ----
+    renderFiles();
+  </script>
+</body>
+</html>
